@@ -1,12 +1,11 @@
 import React, { useEffect, useState, useRef, useCallback, useContext, createContext } from "react";
 import { io, Socket } from "socket.io-client";
 import { Color, Player, Room, Position } from "./client-types";
-import { trackPosition, homeColumnPosition, finishedPosition, colorCenter, colorAngle, TRACK_LENGTH, HOME_COLUMN_LENGTH, HOME_COLUMN_RADIUS, SAFE_TRACK_INDICES, isSafeSquare } from "./board-geo";
-import { createHost, AudioHost } from "./audio";
+import { trackPosition, homeColumnPosition, finishedPosition, colorCenter, colorAngle, TRACK_LENGTH, HOME_COLUMN_LENGTH, HOME_COLUMN_RADIUS, isSafeSquare } from "./board-geo";
+import { AudioHost } from "./audio";
 
 export const EMOTICONS = ["😀", "😂", "😍", "😎", "🥳", "👍", "🔥", "💜", "🎉", "👏", "🙌", "🤔", "😢", "😡"];
 export const COLORS: Color[] = ["red", "yellow", "green", "blue"];
-const BASE_URL = "http://localhost:3000";
 
 interface AudioCtxValue {
   host: AudioHost | null;
@@ -58,7 +57,6 @@ function HomeColumns({ size }: { size: number }) {
         const center = colorCenter(c);
         const cx = center.x + size / 2;
         const cy = center.y + size / 2;
-        const angle = colorAngle(c);
         return (
           <g key={c}>
             <circle cx={cx} cy={cy} r={HOME_COLUMN_RADIUS} fill="#0f172a" stroke="#475569" strokeWidth="3" />
@@ -163,9 +161,7 @@ function TurnPill({ seat, mySeat, color }: { seat: number | null; mySeat: number
   );
 }
 
-function SpectatorView({ room, socket, serverUrl, onGameOver }: {
-  room: Room; socket: Socket; serverUrl: string; onGameOver: () => void;
-}) {
+function SpectatorView({ room, socket, onGameOver }: { room: Room; socket: Socket; onGameOver: () => void }) {
   const [pieces, setPieces] = useState<Map<string, Position>>(new Map());
   const [currentSeat, setCurrentSeat] = useState<number | null>(null);
   const [dice, setDice] = useState<number | null>(null);
@@ -179,9 +175,7 @@ function SpectatorView({ room, socket, serverUrl, onGameOver }: {
     s.on("game-state", (snapshot: any) => {
       if (snapshot?.pieces) {
         const m = new Map<string, Position>();
-        for (const [k, v] of Object.entries(snapshot.pieces)) {
-          m.set(k, v as Position);
-        }
+        for (const [k, v] of Object.entries(snapshot.pieces)) m.set(k, v as Position);
         setPieces(m);
         setCurrentSeat(snapshot.currentPlayerSeat);
         setDice(snapshot.dice);
@@ -194,10 +188,12 @@ function SpectatorView({ room, socket, serverUrl, onGameOver }: {
       setTimeout(() => setEmoticons((prev) => { const m = new Map(prev); m.delete(e.seat); return m; }), 2200);
     });
     s.on("game-over", () => { onGameOver(); });
+    s.on("disconnect", () => setGameOver(true));
     return () => {
       s.off("game-state");
       s.off("emoticon");
       s.off("game-over");
+      s.off("disconnect");
     };
   }, [socket, onGameOver]);
 
@@ -275,8 +271,8 @@ function EmoticonBar({ emoticons, showPicker, setShowPicker, onSend }: {
   );
 }
 
-function RoomView({ room, socket, serverUrl, mySeat, myColor }: {
-  room: Room; socket: Socket; serverUrl: string; mySeat: number | null; myColor: Color | null;
+function RoomView({ room, socket, mySeat, myColor }: {
+  room: Room; socket: Socket; mySeat: number | null; myColor: Color | null;
 }) {
   const [gameStarted, setGameStarted] = useState(room.started);
   const [gameState, setGameState] = useState<any>(null);
@@ -296,18 +292,16 @@ function RoomView({ room, socket, serverUrl, mySeat, myColor }: {
       setGameOver(!!snapshot?.finished);
       setWinnerIds(snapshot?.winnerIds ?? []);
     });
-    s.on("emoticon", (e: any) => {
-      tick();
-    });
-    s.on("game-over", () => {
-      setGameOver(true);
-    });
+    s.on("emoticon", () => tick());
+    s.on("game-over", () => setGameOver(true));
+    s.on("disconnect", () => setGameOver(true));
     return () => {
       s.off("room-state");
       s.off("game-started");
       s.off("game-state");
       s.off("emoticon");
       s.off("game-over");
+      s.off("disconnect");
     };
   }, [socket, tick]);
 
@@ -345,28 +339,29 @@ function RoomView({ room, socket, serverUrl, mySeat, myColor }: {
     return false;
   });
 
-function canMoveTrack(pos: Position, diceVal: number | null): boolean {
-  if (diceVal === null) return false;
-  const idx = pos.index ?? 0;
-  const raw = idx + diceVal;
-  if (raw >= TRACK_LENGTH) {
-    const steps = raw - TRACK_LENGTH;
-    return steps < HOME_COLUMN_LENGTH;
+  function canMoveTrack(pos: Position, diceVal: number | null): boolean {
+    if (diceVal === null) return false;
+    const idx = pos.index ?? 0;
+    const raw = idx + diceVal;
+    if (raw >= TRACK_LENGTH) {
+      const steps = raw - TRACK_LENGTH;
+      return steps < HOME_COLUMN_LENGTH;
+    }
+    return true;
   }
-  return true;
-}
 
-function canMoveHomeColumn(pos: Position, diceVal: number | null): boolean {
-  if (diceVal === null) return false;
-  const idx = pos.index ?? 0;
-  return (HOME_COLUMN_LENGTH - idx) === diceVal;
-}
+  function canMoveHomeColumn(pos: Position, diceVal: number | null): boolean {
+    if (diceVal === null) return false;
+    const idx = pos.index ?? 0;
+    return (HOME_COLUMN_LENGTH - idx) === diceVal;
+  }
 
   return (
     <div className="room-wrap">
       <RoomHeader room={room} />
       <SeatStrip seats={room.seats} />
-      <div className="row">            <button className="primary" onClick={startGame} disabled={Boolean(gameStarted || room.seats.filter((s: Player | null) => s !== null).length === 0)}>
+      <div className="row">
+        <button className="primary" onClick={startGame} disabled={true}>
           {gameStarted ? "Game in progress" : room.seats.some((s) => s !== null) ? "Start game" : "Add players to start"}
         </button>
         <button className="ghost small" onClick={() => socket.emit("leave-room")}>Leave</button>
@@ -385,7 +380,6 @@ function canMoveHomeColumn(pos: Position, diceVal: number | null): boolean {
             <div className="move-row">
               {myPieceIds.map((id) => {
                 const pos = pieces.get(id);
-                const idx = pos?.index;
                 const movable = pos && pos.kind !== "finished" && (
                   (pos.kind === "home" && dice === 6) ||
                   (pos.kind === "track" && canMoveTrack(pos, dice)) ||
@@ -419,7 +413,7 @@ function canMoveHomeColumn(pos: Position, diceVal: number | null): boolean {
 
       <div className="emoticon-row">
         <button className="ghost small" onClick={() => setShowPicker((v) => !v)}>😊 Emoticons</button>
-        <button className="ghost small" onClick={() => readyToggle()}>{room.seats[mySeat!]?.ready ? "Ready ✓" : "Ready"}</button>
+        <button className="ghost small" onClick={() => readyToggle()}>{mySeat !== null && room.seats[mySeat] ? (room.seats[mySeat].ready ? "Ready ✓" : "Ready") : "Ready"}</button>
       </div>
 
       {showPicker && (
@@ -434,24 +428,95 @@ function canMoveHomeColumn(pos: Position, diceVal: number | null): boolean {
 export default function App() {
   const [view, setView] = useState<"home" | "room" | "spectator">("home");
   const [name, setName] = useState("");
-  const [serverUrl, setServerUrl] = useState(BASE_URL);
+  const [serverUrl, setServerUrl] = useState("http://localhost:3000");
   const [code, setCode] = useState("");
+  const [room, setRoom] = useState<Room | null>(null);
+  const [mySeat, setMySeat] = useState<number | null>(null);
+  const [myColor, setMyColor] = useState<Color | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+
+  const connectSocket = useCallback((url: string) => {
+    if (socketRef.current?.connected) socketRef.current.disconnect();
+    const s = io(url, { transports: ["websocket", "polling"], reconnection: false });
+    socketRef.current = s;
+    return s;
+  }, []);
+
+  const handleCreate = useCallback(() => {
+    const s = connectSocket(serverUrl);
+    s.emit("create-room", name.trim() || "Player");
+    s.on("room-created", (payload: any) => {
+      setView("room");
+      setRoom(payload?.room ?? null);
+      setMySeat(payload?.mySeat ?? null);
+      setMyColor((payload?.myColor as Color) ?? null);
+    });
+    s.on("error", (err: any) => alert(err?.message));
+  }, [serverUrl, name, connectSocket]);
+
+  const handleJoin = useCallback(() => {
+    const s = connectSocket(serverUrl);
+    s.emit("join-room", code, name.trim() || "Player");
+    s.on("room-joined", (payload: any) => {
+      setView("room");
+      setRoom(payload?.room ?? null);
+      setMySeat(payload?.mySeat ?? null);
+      setMyColor((payload?.myColor as Color) ?? null);
+    });
+    s.on("joined-spectator", (payload: any) => {
+      setView("spectator");
+      setRoom(payload?.room ?? null);
+    });
+    s.on("error", (err: any) => alert(err?.message));
+  }, [serverUrl, code, name, connectSocket]);
+
+  const handleBack = useCallback(() => {
+    if (socketRef.current) {
+      socketRef.current.emit("leave-room");
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    setView("home");
+    setRoom(null);
+    setMySeat(null);
+    setMyColor(null);
+  }, []);
 
   return (
-    <AudioCtx.Provider value={{
-      host: null,
-      muted: false,
-      setMuted: () => {},
-    }}>
+    <AudioCtx.Provider value={{ host: null, muted: false, setMuted: () => {} }}>
       <div className="app">
-        <HomeScreen name={name} setName={setName} serverUrl={serverUrl} setServerUrl={setServerUrl} code={code} setCode={setCode} onCreate={() => createRoom(serverUrl, name, setView)} onJoin={() => joinRoom(serverUrl, code, name, setView)} />
+        {view === "home" && (
+          <HomeScreen
+            name={name} setName={setName}
+            serverUrl={serverUrl} setServerUrl={setServerUrl}
+            code={code} setCode={setCode}
+            onCreate={handleCreate} onJoin={handleJoin}
+          />
+        )}
+        {view === "room" && room && socketRef.current && (
+          <>
+            <div className="top-bar">
+              <button className="ghost small" onClick={handleBack}>← Leave</button>
+            </div>
+            <RoomView room={room} socket={socketRef.current} mySeat={mySeat} myColor={myColor} />
+          </>
+        )}
+        {view === "spectator" && room && socketRef.current && (
+          <>
+            <div className="top-bar">
+              <button className="ghost small" onClick={handleBack}>← Leave</button>
+            </div>
+            <SpectatorView room={room} socket={socketRef.current} onGameOver={handleBack} />
+          </>
+        )}
       </div>
     </AudioCtx.Provider>
   );
 }
 
 function HomeScreen({ name, setName, serverUrl, setServerUrl, code, setCode, onCreate, onJoin }: {
-  name: string; setName: (n: string) => void; serverUrl: string; setServerUrl: (u: string) => void; code: string; setCode: (c: string) => void; onCreate: () => void; onJoin: () => void;
+  name: string; setName: (n: string) => void; serverUrl: string; setServerUrl: (u: string) => void;
+  code: string; setCode: (c: string) => void; onCreate: () => void; onJoin: () => void;
 }) {
   return (
     <div className="home">
@@ -475,21 +540,4 @@ function HomeScreen({ name, setName, serverUrl, setServerUrl, code, setCode, onC
       </div>
     </div>
   );
-}
-
-function createRoom(serverUrl: string, name: string, setView: (v: "room" | "spectator") => void) {
-  const s = io(serverUrl, { transports: ["websocket", "polling"], reconnection: false });
-  s.emit("create-room", name.trim() || "Player");
-  s.on("room-created", (payload: any) => {
-    setView("room");
-  });
-  s.on("error", (err: any) => alert(err?.message));
-}
-
-function joinRoom(serverUrl: string, code: string, name: string, setView: (v: "room" | "spectator") => void) {
-  const s = io(serverUrl, { transports: ["websocket", "polling"], reconnection: false });
-  s.emit("join-room", code, name.trim() || "Player");
-  s.on("room-joined", () => setView("room"));
-  s.on("joined-spectator", () => setView("spectator"));
-  s.on("error", (err: any) => alert(err?.message));
 }

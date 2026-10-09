@@ -5,7 +5,7 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "strict": true,
+    "strict": false,
     "jsx": "react-jsx",
     "declaration": true,
     "declarationMap": true,
@@ -15,7 +15,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "strict": false,
     "allowImportingTsExtensions": true
   },
   "include": ["src"]

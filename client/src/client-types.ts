@@ -1,0 +1,9 @@
+export type Color = "red" | "yellow" | "green" | "blue";
+export type Difficulty = "easy" | "medium" | "hard";
+export type PositionKind = "home" | "track" | "homeColumn" | "finished";
+export type Position = { kind: PositionKind; index?: number };
+export type Piece = { id: string; color: Color; position: Position };
+export type Player = { id: string; name: string; color: Color; seat: number; isCPU: boolean; difficulty?: Difficulty; ready: boolean; emoticon: string | null };
+export type Room = { id: string; code: string; invite: number; seats: (Player | null)[]; started: boolean; winnerIds: string[]; createdAt: number; spectatorCount: number };
+export type GameState = { roomId: string; pieces: Map<string, Position>; currentPlayerSeat: number | null; dice: number | null; diceLock: boolean; finished: boolean; winnerIds: string[]; spectators: string[] };
+export type EmoticonEvent = { playerId: string; seat: number | undefined; emoticon: string };
